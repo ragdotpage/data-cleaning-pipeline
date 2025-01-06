@@ -9,70 +9,91 @@ def process_excel_file(input_file, output_file):
     wb = load_workbook(input_file)
     ws = wb.active
 
-    # Create a dictionary to store header values for each column
-    column_headers = {}
-    max_row = 1
+    # Find the row containing the main headers
+    main_header_row = None
+    main_headers = ["Part or Item Number", "Item Description"]
+    
+    for row in range(1, ws.max_row + 1):
+        values = [ws.cell(row, col).value for col in range(1, ws.max_column + 1)]
+        if any(header in str(value) for value in values for header in main_headers):
+            main_header_row = row
+            break
 
-    # Initialize column headers dictionary
-    for col in range(1, ws.max_column + 1):
-        column_headers[col] = []
+    if main_header_row is None:
+        raise ValueError("Could not find main headers in the file")
 
-    # Process merged cells first
-    for merged_range in ws.merged_cells.ranges:
-        value = ws.cell(merged_range.min_row, merged_range.min_col).value
-        if value is None:
-            value = ""
-
-        # Apply the merged cell value to all affected columns
-        for col in range(merged_range.min_col, merged_range.max_col + 1):
-            # Ensure the list has enough elements
-            while len(column_headers[col]) < merged_range.min_row - 1:
-                column_headers[col].append("")
-            column_headers[col].append(value)
-
-        max_row = max(max_row, merged_range.max_row)
-
-    # Process non-merged cells
-    for col in range(1, ws.max_column + 1):
-        for row in range(1, max_row + 2):  # +2 to include the row after merged cells
+    # Initialize lists to store the consolidated data for each column
+    consolidated_data = [[] for _ in range(ws.max_column)]
+    
+    # Process rows before main headers to consolidate unrelated data
+    for row in range(1, main_header_row):
+        row_values = []
+        for col in range(1, ws.max_column + 1):
             cell = ws.cell(row, col)
-            if not any(cell.coordinate in merged_range for merged_range in ws.merged_cells.ranges):
-                # Ensure the list has enough elements
-                while len(column_headers[col]) < row - 1:
-                    column_headers[col].append("")
-                value = cell.value if cell.value is not None else ""
-                column_headers[col].append(str(value))
+            value = cell.value if cell.value is not None else ""
+            
+            # Check if cell is part of a merged range
+            is_merged = False
+            merged_value = value
+            for merged_range in ws.merged_cells.ranges:
+                if cell.coordinate in merged_range:
+                    is_merged = True
+                    merged_value = ws.cell(merged_range.min_row, merged_range.min_col).value
+                    break
+            
+            row_values.append(str(merged_value if is_merged else value).strip())
+        
+        # Add non-empty values to their respective columns
+        for col, value in enumerate(row_values):
+            if value and value != "nan":
+                consolidated_data[col].append(value)
 
-    # Combine headers for each column
-    final_headers = []
-    for col in range(1, ws.max_column + 1):
-        # Filter out empty strings and combine with spaces
-        header_parts = [part for part in column_headers[col] if part]
-        final_headers.append(" ".join(header_parts))
+    # Create the final processed data
+    processed_data = []
+    
+    # Add consolidated headers
+    header_row = []
+    for col in range(ws.max_column):
+        header = " ".join(consolidated_data[col])
+        if header:
+            header_row.append(header + " " + str(ws.cell(main_header_row, col + 1).value))
+        else:
+            header_row.append(str(ws.cell(main_header_row, col + 1).value))
+    processed_data.append(header_row)
+    
+    # Add the actual data rows
+    for row in range(main_header_row + 1, ws.max_row + 1):
+        row_data = []
+        for col in range(1, ws.max_column + 1):
+            cell = ws.cell(row, col)
+            value = cell.value if cell.value is not None else ""
+            row_data.append(str(value).strip())
+        if any(value.strip() for value in row_data):  # Only add non-empty rows
+            processed_data.append(row_data)
 
-    # Read the data portion of the Excel file
-    df = pd.read_excel(input_file, header=None, skiprows=max_row)
-
-    # Set the combined headers
-    df.columns = final_headers
-
-    # Remove completely empty rows
+    # Create DataFrame and save
+    df = pd.DataFrame(processed_data[1:], columns=processed_data[0])
+    
+    # Remove any completely empty rows
     df_cleaned = df.dropna(how='all')
-
+    
     # Reset the index after removing rows
     df_cleaned = df_cleaned.reset_index(drop=True)
-
+    
     # Save the cleaned DataFrame to a new Excel file
     df_cleaned.to_excel(output_file, index=False)
     print(f"File processed and saved as: {output_file}")
-
+    
     # Print the headers for verification
     print("\nColumn headers:")
-    for header in final_headers:
+    for header in processed_data[0]:
         print(f"- {header}")
 
+    return df_cleaned
+
+
 if __name__ == "__main__":
-    input_file = "inventory.xlsx"  # Replace with your input file name
+    input_file = "inventory_copy.xlsx"  # Replace with your input file name
     output_file = "inventory_cleaned.xlsx"  # Replace with your desired output file name
 
     try:
