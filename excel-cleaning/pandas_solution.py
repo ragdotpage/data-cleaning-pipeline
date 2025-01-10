@@ -73,7 +73,7 @@ def process_excel_file(input_file, output_file):
 
 if __name__ == "__main__":
     input_file = "inventory.xlsx"  # Replace with your input file name
-    output_file = "inventory_cleaned.xlsx"  # Replace with your desired output file name
+    output_file = "inventory_cleaned_pandas.xlsx"  # Replace with your desired output file name
 
     try:
         process_excel_file(input_file, output_file)
